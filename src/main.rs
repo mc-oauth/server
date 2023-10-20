@@ -59,6 +59,7 @@ mod web_server {
         }
     }
 
+    #[allow(clippy::unused_io_amount)]
     async fn on_client(store: &Arc<Mutex<Store>>, stream: &mut TcpStream) -> IOResult<()> {
         let mut buffer = [0; 1024];
         stream.read(&mut buffer)?;
@@ -66,10 +67,10 @@ mod web_server {
         let path = "GET /token/";
         // Check if we get the correct path
         if &buffer[0..path.len()] == path.as_bytes() {
-            let token_len = 6 as usize;
+            let token_len = 6_usize;
             let path_len = path.len();
             let slice = &buffer[path_len..path_len + token_len];
-            let token = read_number(&slice)?;
+            let token = read_number(slice)?;
             // Read profile from store
             let mut data = store.lock().await;
             let profile: Option<Profile> = data.lookup(token);
@@ -87,7 +88,7 @@ mod web_server {
     fn read_number(slice: &[u8]) -> IOResult<i32> {
         let mut result = 0;
         for &byte in slice {
-            if byte < 48 || byte > 57 {
+            if !(48..=57).contains(&byte) {
                 return Err(Error::from(ErrorKind::InvalidInput))
             }
             let digit = (byte - 48) as i32;
@@ -240,7 +241,7 @@ async fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResu
 
 fn hash(key_pair: &KeyPair, secrect: &[u8]) -> String {
     let mut sha = Sha1::new();
-    sha.input(&secrect);
+    sha.input(secrect);
     sha.input(&key_pair.encoded);
     let mut digest = [0u8; 20];
     sha.result(&mut digest);

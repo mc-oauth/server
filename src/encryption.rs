@@ -108,13 +108,13 @@ impl CraftCipher {
         const IV_SIZE: usize = 16;
         const IV_SIZE_MINUS_ONE: usize = IV_SIZE - 1;
         let iv_ptr = iv.as_mut_ptr();
-        let iv_end_ptr = iv_ptr.offset(IV_SIZE_MINUS_ONE as isize);
+        let iv_end_ptr = iv_ptr.add(IV_SIZE_MINUS_ONE);
         let tmp_ptr = self.tmp.as_mut_ptr();
         let tmp_offset_one_ptr = tmp_ptr.offset(1);
         let cipher = &mut self.cipher;
         let n = data.len();
         let mut data_ptr = data.as_mut_ptr();
-        let data_end_ptr = data_ptr.offset(n as isize);
+        let data_end_ptr = data_ptr.add(n);
 
         while data_ptr != data_end_ptr {
             std::ptr::copy_nonoverlapping(iv_ptr, tmp_ptr, IV_SIZE);

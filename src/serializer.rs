@@ -37,22 +37,21 @@ impl VarInt {
 
     pub fn write<T: Write>(mut value: i32, stream: &mut T) -> IOResult<usize> {
         let mut buf = [0u8; 1];
-        let mut size = 0 as usize;
+        let mut size = 0_usize;
         loop {
             size += 1;
             if (value & !SEGMENT_BITS) == 0 {
                 buf[0] = value as u8;
-                stream.write(&buf)?;
+                stream.write_all(&buf)?;
                 break;
             }
             buf[0] = ((value & SEGMENT_BITS) | CONTINUE_BIT) as u8;
-            stream.write(&buf)?;
+            stream.write_all(&buf)?;
             value >>= 7;
         }
         Ok(size)
     }
 }
-
 
 #[derive(Debug)]
 pub struct UUID(pub u128);
@@ -90,7 +89,7 @@ impl Serializable for String {
         let len = self.len() as i32;
         let bytes = self.as_bytes();
         VarInt::write(len, buf)?;
-        buf.write(&bytes)
+        buf.write(bytes)
     }
 
     fn deserialize(stream: &mut Stream) -> IOResult<Self> {

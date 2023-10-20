@@ -21,10 +21,8 @@ impl LoginPacket {
 
         let mut uuid = None;
         // >= Minecraft 1.19
-        if protocol >= 759 {
-            if protocol > 763 || bool::deserialize(body)? {
-                uuid = Some(UUID::deserialize(body)?);
-            } 
+        if protocol >= 759 && (protocol > 763 || bool::deserialize(body)?) {
+            uuid = Some(UUID::deserialize(body)?);
         }
 
         Ok(Self { name, uuid })
@@ -65,10 +63,10 @@ pub fn write_encryption_request(key: &KeyPair, connection: &mut Connection) -> I
     "".to_string().serialize(&mut body)?; // Server id
     // Public key
     VarInt::write(key.encoded.len() as i32, &mut body)?;
-    body.write(&key.encoded)?;
+    body.write_all(&key.encoded)?;
     // Verify token
     VarInt::write(key.nonce.len() as i32, &mut body)?;
-    body.write(&key.nonce)?;
+    body.write_all(&key.nonce)?;
     // Send packet
     connection.write_packet(0x01, &mut body)
 }
