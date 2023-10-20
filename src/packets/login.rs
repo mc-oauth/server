@@ -1,7 +1,7 @@
 use crate::serializer::{UUID, VarInt, IOResult, Serializable};
 use crate::connection::{C2SPacket, Connection};
 use crate::encryption::KeyPair;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Error, ErrorKind};
 
 #[derive(Debug)]
 pub struct LoginPacket {
@@ -16,6 +16,10 @@ impl LoginPacket {
     }
 
     pub fn read(packet: &mut C2SPacket, protocol: i32) -> IOResult<Self> {
+        if packet.id != 0x00 {
+            return Err(Error::from(ErrorKind::InvalidData))
+        }
+
         let body = &mut packet.body;
         let name = String::deserialize(body)?;
 
@@ -42,6 +46,10 @@ impl C2SEncryptionKeyResponse {
     }
 
     pub fn read(packet: &mut C2SPacket, key: &KeyPair) -> IOResult<Self> {
+        if packet.id != 0x01 {
+            return Err(Error::from(ErrorKind::InvalidData))
+        }
+
         let body = &mut packet.body;
         // Secrect
         let secrect_len = VarInt::read(body)? as usize;

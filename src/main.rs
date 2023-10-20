@@ -19,7 +19,7 @@ async fn main() {
     env::set_var("RUST_BACKTRACE", "1");
     let store = Arc::new(Mutex::new(Store::new()));
     let handle = Arc::clone(&store);
-    tokio::spawn(async move {
+    let server_thread = tokio::spawn(async move {
         let result = web_server::run(handle, "0.0.0.0:8080").await;
         if let Err(err) = result {
             println!("[Http] An error occured: {:?}", err);
@@ -28,7 +28,8 @@ async fn main() {
     // Run minecraft server
     let result = run(Arc::clone(&store), "0.0.0.0:25565").await;
     if let Err(err) = result {
-        println!("[Minecraft] An error occured: {:?}", err);
+        println!("[Minecraft] A fatal error occured: {:?}", err);
+        server_thread.abort();
     }
 }
 
@@ -110,7 +111,7 @@ async fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
             }
         };
         let clone = store.clone();
-        tokio::spawn(async move {
+        let _handle = tokio::spawn(async move {
             on_client(connection, clone).await;
         });
     }
@@ -120,10 +121,10 @@ async fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
     let addr = connection.addr.to_string();
     let result = handle(&mut connection, store).await;
     if let Err(err) = result {
-        eprintln!("[{}] An error occured: {:?}", addr, err);
+        eprintln!("[{}] An error handling a client: {:?}", addr, err);
     }
     if let Err(err) = connection.close() {
-        eprintln!("[{}] An error occured: {:?}", addr, err);
+        eprintln!("[{}] An error closing a connection: {:?}", addr, err);
     }
 }
 

@@ -21,8 +21,8 @@ pub struct C2SPacket {
 impl Connection {
     pub fn new(stream: TcpStream, addr: SocketAddr) -> IOResult<Self> {
         stream.set_nodelay(true)?;
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(3)))?;
         Ok(Self { stream, addr, cipher: None })
     }
 

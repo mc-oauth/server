@@ -27,6 +27,9 @@ impl HandshakePacket {
     }
 
     pub fn read(packet: &mut C2SPacket) -> IOResult<Self> {
+        if packet.id != 0x00 {
+            return Err(Error::from(ErrorKind::InvalidData))
+        }
         let body = &mut packet.body;
         let protocol = VarInt::read(body)?;
         let host = String::deserialize(body)?;
@@ -50,6 +53,9 @@ impl PingRequest {
     }
 
     pub fn read(packet: &mut C2SPacket) -> IOResult<Self> {
+        if packet.id != 0x01 {
+            return Err(Error::from(ErrorKind::InvalidData))
+        }
         let body = &mut packet.body;
         let payload = i64::deserialize(body)?;
         Ok(Self { payload })
