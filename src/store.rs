@@ -27,7 +27,7 @@ impl Profile {
     fn read_string(value: &Value, field: &str) -> IOResult<String> {
         match value.get(field) {
             Some(val) => Ok(val.to_string()),
-            None => Err(Error::from(ErrorKind::InvalidInput))
+            None => Err(Error::new(ErrorKind::InvalidInput, "Could not read json value"))
         }
     }
 }

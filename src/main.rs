@@ -119,7 +119,13 @@ fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
     let addr = connection.addr.to_string();
     let result = handle(&mut connection, store);
     if let Err(err) = result {
-        eprintln!("[{}] An error handling a client: {:?}", addr, err);
+        match err.kind() {
+            ErrorKind::WouldBlock => (),
+            ErrorKind::UnexpectedEof => (),
+            ErrorKind::ConnectionReset => (),
+            ErrorKind::NotConnected => (),
+            _ => eprintln!("[Minecraft] A fatal error occured: {:?}", err)
+        };
     }
     if let Err(err) = connection.close() {
         eprintln!("[{}] An error closing a connection: {:?}", addr, err);
@@ -129,13 +135,13 @@ fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
 fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()> {
     let handshake = HandshakePacket::from(connection)?;
     if handshake.protocol < 47 || (handshake.protocol >= 759 && handshake.protocol <= 760) {
-        return Err(Error::from(ErrorKind::Other));
+        return Err(Error::new(ErrorKind::Other, "Unsupported protocol version"));
     }
     // Status
     if handshake.next_state == ConnectionState::Status {
         let packet = connection.read_packet()?;
         if packet.id != 0x00 {
-            return Err(Error::from(ErrorKind::Other));
+            return Err(Error::new(ErrorKind::Other, "Expected packet id 0x00"));
         }
         // Status request
         let json = json!(
@@ -170,18 +176,25 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
     // C -> S: Encryption key response
     let encryption_response = C2SEncryptionKeyResponse::from(connection, &key_pair)?;
     if key_pair.nonce != encryption_response.verify_token {
-        return Err(Error::from(ErrorKind::Other));
+        return Err(Error::new(ErrorKind::Other, "Nonce from client does not match expected"));
     }
     let secrect = &encryption_response.secrect;
+    let cipher = CraftCipher::new(secrect, secrect)?;
+    connection.set_cipher(cipher);
+
     let hash = hash(&key_pair, secrect);
     // Check if player has joined
     let url = format!("https://sessionserver.mojang.com/session/minecraft/hasJoined?username={}&serverId={}", login_packet.name, hash);
     let response = match minreq::get(&url).send() {
         Ok(data) => data,
-        Err(_) => return Err(Error::from(ErrorKind::Other))
+        Err(_) => {
+            connection.error()?;
+            return Err(Error::new(ErrorKind::Other, "Unable to contact mojang sessionserver"))
+        }
     };
     if response.status_code != 200 {
-        return Err(Error::new(ErrorKind::Other, "Failed to authenticate"))
+        connection.error()?;
+        return Err(Error::new(ErrorKind::Other, "Failed to authenticate user"))
     }
     let data = response.as_bytes();
     let json = serde_json::from_slice::<Value>(data)?;
@@ -192,8 +205,6 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
     drop(data);
     println!("[{} -> {}] Provided {} with token {token}", connection.addr, handshake.host, login_packet.name);
     // S -> C: Disconnect
-    let cipher = CraftCipher::new(secrect, secrect)?;
-    connection.set_cipher(cipher);
     let json = json!(
         {
             "text": "Your auth code is ",
@@ -232,10 +243,8 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
                 }
             ]
         }
-    ).to_string();
-    let mut body = Vec::new();
-    json.serialize(&mut body)?;
-    connection.write_packet(0x00, &mut body)
+    );
+    connection.disconnect(&json)
 }
 
 fn hash(key_pair: &KeyPair, secrect: &[u8]) -> String {

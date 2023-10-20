@@ -34,7 +34,7 @@ impl KeyPair {
     pub fn decrypt(&self, data: &[u8]) -> IOResult<Vec<u8>> {
         match self.private.decrypt(Pkcs1v15Encrypt, data) {
             Ok(data) => Ok(data),
-            Err(_) => Err(Error::from(ErrorKind::Other))
+            Err(_) => Err(Error::new(ErrorKind::Other, "Unable to decrypt data"))
         }
     }
 }
@@ -77,7 +77,7 @@ pub struct CraftCipher {
 impl CraftCipher {
     pub fn new(key: &[u8], iv: &[u8]) -> IOResult<Self> {
         if iv.len() != BYTES_SIZE || key.len() != BYTES_SIZE {
-            return Err(Error::from(ErrorKind::InvalidData))
+            return Err(Error::new(ErrorKind::InvalidData, "key or iv is not the correct size"))
         }
 
         let mut iv_out = [0u8; BYTES_SIZE];

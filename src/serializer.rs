@@ -29,7 +29,7 @@ impl VarInt {
             }
             position += 7;
             if position >= 32 {
-                return Err(Error::from(ErrorKind::Other))?;
+                return Err(Error::new(ErrorKind::Other, "VarInt too big"))?;
             }
         }
         Ok(value)

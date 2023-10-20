@@ -17,7 +17,7 @@ impl LoginPacket {
 
     pub fn read(packet: &mut C2SPacket, protocol: i32) -> IOResult<Self> {
         if packet.id != 0x00 {
-            return Err(Error::from(ErrorKind::InvalidData))
+            return Err(Error::new(ErrorKind::InvalidData, "Expected login packet (0x00)"))
         }
 
         let body = &mut packet.body;
@@ -47,7 +47,7 @@ impl C2SEncryptionKeyResponse {
 
     pub fn read(packet: &mut C2SPacket, key: &KeyPair) -> IOResult<Self> {
         if packet.id != 0x01 {
-            return Err(Error::from(ErrorKind::InvalidData))
+            return Err(Error::new(ErrorKind::InvalidData, "Expected C2SEncryptionKeyResponse packet 0x01"))
         }
 
         let body = &mut packet.body;

@@ -28,7 +28,7 @@ impl HandshakePacket {
 
     pub fn read(packet: &mut C2SPacket) -> IOResult<Self> {
         if packet.id != 0x00 {
-            return Err(Error::from(ErrorKind::InvalidData))
+            return Err(Error::new(ErrorKind::InvalidData, "Expected HandshakePacket packet"))
         }
         let body = &mut packet.body;
         let protocol = VarInt::read(body)?;
@@ -38,7 +38,7 @@ impl HandshakePacket {
         let next_state = match state {
             1 => ConnectionState::Status,
             2 => ConnectionState::Login,
-            _ => return Err(Error::from(ErrorKind::InvalidData))
+            _ => return Err(Error::new(ErrorKind::InvalidData, "Invalid connection state"))
         };
         Ok(Self { protocol, host, port, next_state })
     }
@@ -54,7 +54,7 @@ impl PingRequest {
 
     pub fn read(packet: &mut C2SPacket) -> IOResult<Self> {
         if packet.id != 0x01 {
-            return Err(Error::from(ErrorKind::InvalidData))
+            return Err(Error::new(ErrorKind::InvalidData, "Expected PingRequest packet"))
         }
         let body = &mut packet.body;
         let payload = i64::deserialize(body)?;

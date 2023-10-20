@@ -1,8 +1,10 @@
 use std::io::{Write, Read, Cursor};
 use std::net::{TcpStream, SocketAddr};
 use std::time::Duration;
+use serde_json::{Value, json};
+
 use crate::encryption::CraftCipher;
-use crate::serializer::{VarInt, IOResult};
+use crate::serializer::{VarInt, IOResult, Serializable};
 
 pub type PacketBuffer = Cursor<Vec<u8>>;
 
@@ -21,8 +23,8 @@ pub struct C2SPacket {
 impl Connection {
     pub fn new(stream: TcpStream, addr: SocketAddr) -> IOResult<Self> {
         stream.set_nodelay(true)?;
-        stream.set_read_timeout(Some(Duration::from_secs(3)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(3)))?;
+        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
         Ok(Self { stream, addr, cipher: None })
     }
 
@@ -73,5 +75,26 @@ impl Connection {
         self.write(&mut size_buf)?;
         self.write(&mut id_buf)?;
         self.write(buf)
+    }
+
+    pub fn disconnect(&mut self, json: &Value) -> IOResult<()> {
+        let mut body = Vec::new();
+        json.to_string().serialize(&mut body)?;
+        self.write_packet(0x00, &mut body)
+    }
+
+    pub fn error(&mut self) -> IOResult<()> {
+        let response = json!(
+            {
+                "text": "Failed to authenticate\n",
+                "color": "red",
+                "extra": [
+                    {
+                        "text": "Please try again in a moment"
+                    }
+                ]
+            }
+        );
+        self.disconnect(&response)
     }
 }
