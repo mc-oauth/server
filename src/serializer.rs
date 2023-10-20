@@ -1,4 +1,4 @@
-use std::io::{Read, Write, Error};
+use std::io::{Read, Write, Error, ErrorKind};
 use byteorder::{ReadBytesExt, BigEndian};
 
 const SEGMENT_BITS: i32 = 0x7F;
@@ -29,7 +29,7 @@ impl VarInt {
             }
             position += 7;
             if position >= 32 {
-                // return Err("VarInt is too big")?;
+                return Err(Error::from(ErrorKind::Other))?;
             }
         }
         Ok(value)
