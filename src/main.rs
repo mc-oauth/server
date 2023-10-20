@@ -11,25 +11,23 @@ use crypto::digest::Digest;
 use std::env;
 use authentify::encryption::{CraftCipher, KeyPair, calc_hash};
 use serde_json::{json, Value};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env::set_var("RUST_BACKTRACE", "1");
     let store = Arc::new(Mutex::new(Store::new()));
     let handle = Arc::clone(&store);
-    let server_thread = tokio::spawn(async move {
-        let result = web_server::run(handle, "0.0.0.0:8080").await;
+    let _server_thread = thread::spawn(move || {
+        let result = web_server::run(handle, "0.0.0.0:8080");
         if let Err(err) = result {
             println!("[Http] An error occured: {:?}", err);
         }
     });
     // Run minecraft server
-    let result = run(Arc::clone(&store), "0.0.0.0:25565").await;
+    let result = run(Arc::clone(&store), "0.0.0.0:25565");
     if let Err(err) = result {
         println!("[Minecraft] A fatal error occured: {:?}", err);
-        server_thread.abort();
     }
 }
 
@@ -38,7 +36,7 @@ mod web_server {
 
     use super::*;
 
-    pub async fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
+    pub fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
         let listener = TcpListener::bind(bind)?;
         println!("[http] Listening on address {bind}");
         loop {
@@ -52,7 +50,7 @@ mod web_server {
             stream.set_nodelay(true)?;
             stream.set_read_timeout(Some(Duration::from_secs(5)))?;
             stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-            let result = on_client(&store, &mut stream).await;
+            let result = on_client(&store, &mut stream);
             if let Err(err) = result {
                 eprintln!("[http] Error in client {:?}", err);
             }
@@ -61,7 +59,7 @@ mod web_server {
     }
 
     #[allow(clippy::unused_io_amount)]
-    async fn on_client(store: &Arc<Mutex<Store>>, stream: &mut TcpStream) -> IOResult<()> {
+    fn on_client(store: &Arc<Mutex<Store>>, stream: &mut TcpStream) -> IOResult<()> {
         let mut buffer = [0; 1024];
         stream.read(&mut buffer)?;
         
@@ -73,7 +71,7 @@ mod web_server {
             let slice = &buffer[path_len..path_len + token_len];
             let token = read_number(slice)?;
             // Read profile from store
-            let mut data = store.lock().await;
+            let mut data = store.lock().expect("mutex lock failed");
             let profile: Option<Profile> = data.lookup(token);
             drop(data);
             if let Some(profile) = profile {
@@ -99,7 +97,7 @@ mod web_server {
     }
 }
 
-async fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
+fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
     let listener = TcpListener::bind(bind)?;
     println!("[Minecraft] Listening on address {bind}");
     loop {
@@ -111,15 +109,15 @@ async fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
             }
         };
         let clone = store.clone();
-        let _handle = tokio::spawn(async move {
-            on_client(connection, clone).await;
+        let _handle = thread::spawn(move || {
+            on_client(connection, clone);
         });
     }
 }
 
-async fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
+fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
     let addr = connection.addr.to_string();
-    let result = handle(&mut connection, store).await;
+    let result = handle(&mut connection, store);
     if let Err(err) = result {
         eprintln!("[{}] An error handling a client: {:?}", addr, err);
     }
@@ -128,7 +126,7 @@ async fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
     }
 }
 
-async fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()> {
+fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()> {
     let handshake = HandshakePacket::from(connection)?;
     if handshake.protocol < 47 || (handshake.protocol >= 759 && handshake.protocol <= 760) {
         return Err(Error::from(ErrorKind::Other));
@@ -189,7 +187,7 @@ async fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResu
     let json = serde_json::from_slice::<Value>(data)?;
     let profile = Profile::from_json(&json)?;
     // Generate token
-    let mut data = store.lock().await;
+    let mut data = store.lock().expect("mutex lock failed");
     let token = data.generate(profile);
     drop(data);
     println!("[{} -> {}] Provided {} with token {token}", connection.addr, handshake.host, login_packet.name);
