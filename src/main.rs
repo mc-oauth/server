@@ -124,18 +124,21 @@ fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
             ErrorKind::UnexpectedEof => (),
             ErrorKind::ConnectionReset => (),
             ErrorKind::NotConnected => (),
-            _ => eprintln!("[Minecraft] A fatal error occured: {:?}", err)
+            _ => eprintln!("[{}] A client error occured: {:?}", addr, err)
         };
     }
     if let Err(err) = connection.close() {
-        eprintln!("[{}] An error closing a connection: {:?}", addr, err);
+        match err.kind() {
+            ErrorKind::NotConnected => (),
+            _ => eprintln!("[{}] An error closing a connection: {:?}", addr, err)
+        }
     }
 }
 
 fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()> {
     let handshake = HandshakePacket::from(connection)?;
     if handshake.protocol < 47 || (handshake.protocol >= 759 && handshake.protocol <= 760) {
-        return Err(Error::new(ErrorKind::Other, "Unsupported protocol version"));
+        return Ok(())
     }
     // Status
     if handshake.next_state == ConnectionState::Status {
