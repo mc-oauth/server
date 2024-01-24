@@ -75,6 +75,10 @@ pub fn write_encryption_request(key: &KeyPair, connection: &mut Connection, prot
     // Verify token (nonce)
     VarInt::write(key.nonce.len() as i32, &mut body)?;
     body.write_all(&key.nonce)?;
+    if protocol > 765 {
+        // Minecraft 1.20.5 and beyond
+        true.serialize(&mut body)?; // If the client should join the server
+    }
     // Send packet
     connection.write_packet(0x01, &mut body)
 }
