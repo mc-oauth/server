@@ -68,8 +68,8 @@ impl Connection {
     pub fn write_packet(&mut self, id: i32, buf: &mut [u8]) -> IOResult<()> {
         // Header { packet size, packet id } + body
         let mut id_buf = Vec::new();
-        VarInt::write(id, &mut id_buf)?;
         let mut size_buf = Vec::new();
+        VarInt::write(id, &mut id_buf)?;
         VarInt::write((id_buf.len() + buf.len()) as i32, &mut size_buf)?;
         // Write to client
         self.write(&mut size_buf)?;

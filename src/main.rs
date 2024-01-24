@@ -8,6 +8,7 @@ use authentify::store::{Store, Profile};
 
 use crypto::sha1::Sha1;
 use crypto::digest::Digest;
+use log::{debug, error, info};
 use std::env;
 use authentify::encryption::{CraftCipher, KeyPair, calc_hash};
 use serde_json::{json, Value};
@@ -16,18 +17,23 @@ use std::thread;
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
+    env_logger::init_from_env(
+        env_logger::Env::default()
+            .filter_or(env_logger::DEFAULT_FILTER_ENV, "info")
+    );
+
     let store = Arc::new(Mutex::new(Store::new()));
     let handle = Arc::clone(&store);
     let _server_thread = thread::spawn(move || {
         let result = web_server::run(handle, "0.0.0.0:8080");
         if let Err(err) = result {
-            println!("[Http] An error occured: {:?}", err);
+            panic!("[Http] An error occured: {:?}", err);
         }
     });
     // Run minecraft server
     let result = run(Arc::clone(&store), "0.0.0.0:25565");
     if let Err(err) = result {
-        println!("[Minecraft] A fatal error occured: {:?}", err);
+        panic!("[Minecraft] A fatal error occured: {:?}", err);
     }
 }
 
@@ -38,12 +44,12 @@ mod web_server {
 
     pub fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
         let listener = TcpListener::bind(bind)?;
-        println!("[http] Listening on address {bind}");
+        info!("[http] Listening on address {bind}");
         loop {
             let (mut stream, _) = match listener.accept() {
                 Ok(value) => value,
                 Err(err) => {
-                    eprintln!("[http] Could not accept client: {:?}", err);
+                    error!("[http] Could not accept client: {:?}", err);
                     continue;
                 }
             };
@@ -52,7 +58,7 @@ mod web_server {
             stream.set_write_timeout(Some(Duration::from_secs(5)))?;
             let result = on_client(&store, &mut stream);
             if let Err(err) = result {
-                eprintln!("[http] Error in client {:?}", err);
+                error!("[http] Error in client {:?}", err);
             }
             stream.shutdown(std::net::Shutdown::Both)?;
         }
@@ -99,45 +105,49 @@ mod web_server {
 
 fn run(store: Arc<Mutex<Store>>, bind: &str) -> IOResult<()> {
     let listener = TcpListener::bind(bind)?;
-    println!("[Minecraft] Listening on address {bind}");
+    info!("[Minecraft] Listening on address {bind}");
     loop {
         let connection = match listener.accept() {
             Ok((stream, addr)) => Connection::new(stream, addr)?,
             Err(err) => {
-                println!("Could not accept client: {:?}", err);
+                error!("Could not accept client: {:?}", err);
                 continue;
             }
         };
         let clone = store.clone();
         let _handle = thread::spawn(move || {
+            debug!("Incoming connection from {:?}", connection.addr);
             on_client(connection, clone);
         });
     }
 }
 
 fn on_client(mut connection: Connection, store: Arc<Mutex<Store>>) {
-    let addr = connection.addr.to_string();
+    let addr = connection.addr;
     let result = handle(&mut connection, store);
     if let Err(err) = result {
         match err.kind() {
-            ErrorKind::WouldBlock => (),
-            ErrorKind::UnexpectedEof => (),
-            ErrorKind::ConnectionReset => (),
-            ErrorKind::NotConnected => (),
-            _ => eprintln!("[{}] A client error occured: {:?}", addr, err)
+            ErrorKind::WouldBlock => debug!("[{}] Connection would block {:?}", addr, err),
+            ErrorKind::UnexpectedEof => debug!("[{}] Unexpected EOF {:?}", addr, err),
+            ErrorKind::ConnectionReset => debug!("[{}] Connection reset {:?}", addr, err),
+            ErrorKind::NotConnected => debug!("[{}] Not connected {:?}", addr, err),
+            _ => error!("[{}] A client error occured: {:?}", addr, err)
         };
     }
     if let Err(err) = connection.close() {
         match err.kind() {
             ErrorKind::NotConnected => (),
-            _ => eprintln!("[{}] An error closing a connection: {:?}", addr, err)
+            _ => error!("[{}] An error closing a connection: {:?}", addr, err)
         }
     }
+    debug!("Disconnect {:?}", addr);
 }
 
 fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()> {
     let handshake = HandshakePacket::from(connection)?;
-    if handshake.protocol < 47 || (handshake.protocol >= 759 && handshake.protocol <= 760) {
+    let protocol = handshake.protocol;
+    if protocol < 47 || (protocol >= 759 && protocol <= 760) {
+        debug!("Ignoring connection from protocol {}", handshake.protocol);
         return Ok(())
     }
     // Status
@@ -151,7 +161,7 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
             {
                 "version": {
                     "name": "AuthServer",
-                    "protocol": handshake.protocol
+                    "protocol": protocol
                 },
                 "players": {
                     "max": 1,
@@ -172,10 +182,10 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
         return packet.write(connection)
     }
     // C -> S: Login Start
-    let login_packet = LoginPacket::from(connection, handshake.protocol)?;
+    let login_packet = LoginPacket::from(connection, protocol)?;
     // S -> C: Encryption Request
     let key_pair = KeyPair::new();
-    write_encryption_request(&key_pair, connection)?;
+    write_encryption_request(&key_pair, connection, protocol)?;
     // C -> S: Encryption key response
     let encryption_response = C2SEncryptionKeyResponse::from(connection, &key_pair)?;
     if key_pair.nonce != encryption_response.verify_token {
@@ -195,7 +205,10 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
             return Err(Error::new(ErrorKind::Other, "Unable to contact mojang sessionserver"))
         }
     };
-    if response.status_code != 200 {
+    let status = response.status_code;
+    if status != 200 {
+        let text = response.as_str().expect("Response text");
+        debug!("Failed to authenticate user {text} ({status})");
         connection.error()?;
         return Err(Error::new(ErrorKind::Other, "Failed to authenticate user"))
     }
@@ -206,7 +219,7 @@ fn handle(connection: &mut Connection, store: Arc<Mutex<Store>>) -> IOResult<()>
     let mut data = store.lock().expect("mutex lock failed");
     let token = data.generate(profile);
     drop(data);
-    println!("[{} -> {}] Provided {} with token {token}", connection.addr, handshake.host, login_packet.name);
+    info!("[{} -> {}] Provided {} with token {token}", connection.addr, handshake.host, login_packet.name);
     // S -> C: Disconnect
     let json = json!(
         {

@@ -66,13 +66,13 @@ impl C2SEncryptionKeyResponse {
     }
 }
 
-pub fn write_encryption_request(key: &KeyPair, connection: &mut Connection) -> IOResult<()> {
+pub fn write_encryption_request(key: &KeyPair, connection: &mut Connection, protocol: i32) -> IOResult<()> {
     let mut body = Vec::new();
     "".to_string().serialize(&mut body)?; // Server id
     // Public key
     VarInt::write(key.encoded.len() as i32, &mut body)?;
     body.write_all(&key.encoded)?;
-    // Verify token
+    // Verify token (nonce)
     VarInt::write(key.nonce.len() as i32, &mut body)?;
     body.write_all(&key.nonce)?;
     // Send packet
